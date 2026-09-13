@@ -1,0 +1,47 @@
+@startuml Кинобездна - переходное состояние
+!include<C4/C4_Container>
+
+title "Кинобездна - переходное состояние (Strangler Fig, выделен movies)"
+
+AddRelTag("async", $lineStyle=DashedLine(), $legendText="асинхронное взаимодействие")
+AddRelTag("migration", $lineStyle=BoldLine(), $legendText="постепенное переключение трафика (feature flag)")
+
+Person(user, "Пользователь", "Смотрит фильмы по подписке")
+System_Ext(payments_provider, "Платежный провайдер")
+System_Ext(recommendation_provider, "Рекомендательная система")
+System_Ext(s3, "Хранилище контента (S3)")
+
+System_Boundary(kinobezdna, "Сервис Кинобездна") {
+    Container(web_ui, "Веб-интерфейс")
+    Container(agw, "Прокси-сервис (API Gateway)", "Strangler Fig", "Делит трафик /api/movies по MOVIES_MIGRATION_PERCENT")
+
+    Container(monolith, "Монолит", "Go", "Пользователи, платежи, подписки, legacy-логика фильмов")
+    Container(movies_api, "Микросервис управления фильмами", "Go", "Выделен из монолита первым")
+    Container(events_service, "Сервис событий (MVP)", "", "Проверка гипотезы Kafka: сам создает и сам читает события")
+
+    ContainerDb(shared_db, "Общая БД (PostgreSQL)", "", "Одна база на монолит и movies: разделение данных - следующий шаг")
+    ContainerQueue(kafka, "Шина данных (Kafka)")
+    ContainerQueue(rabbitmq, "Шина рекомендательной системы (RabbitMQ)")
+
+    Rel(agw, monolith, "Весь трафик, кроме переключенной доли movies", $tags="migration")
+    Rel(agw, movies_api, "Доля трафика /api/movies по MOVIES_MIGRATION_PERCENT", $tags="migration")
+    Rel(agw, events_service, "Создание событий User/Payment/Movie")
+
+    Rel(monolith, shared_db, "Читает и пишет все домены")
+    Rel(movies_api, shared_db, "Читает и пишет метаданные фильмов")
+
+    Rel(events_service, kafka, "Пишет события", $tags="async")
+    Rel(kafka, events_service, "Отдает события на чтение с записью в лог", $tags="async")
+
+    Rel(monolith, rabbitmq, "Пишет данные для рекомендаций", $tags="async")
+}
+
+Rel(rabbitmq, recommendation_provider, "Рассчитывает рекомендации и возвращает подборки", $tags="async")
+Rel(monolith, payments_provider, "Делегирует оплату")
+Rel(monolith, s3, "Хранит и раздает контент")
+
+Rel(user, web_ui, "Взаимодействует с сервисом")
+Rel(web_ui, agw, "Все запросы через единую точку входа")
+
+SHOW_LEGEND()
+@enduml

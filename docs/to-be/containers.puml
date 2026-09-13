@@ -1,0 +1,100 @@
+@startuml Кинобездна - C4 Container
+!include<C4/C4_Container>
+
+title "Кинобездна - C4 Container"
+
+AddRelTag("async", $lineStyle=DashedLine(), $legendText="асинхронное взаимодействие")
+
+Person(user, "Пользователь", "Смотрит фильмы по подписке")
+System_Ext(payments_provider, "Платежный провайдер")
+System_Ext(email_provider, "Почтовый провайдер")
+System_Ext(cdn, "Система раздачи контента")
+System_Ext(recommendation_provider, "Рекомендательная система")
+
+System_Boundary(kinobezdna, "Сервис Кинобездна (полное разделение на микросервисы)") {
+    System_Boundary(ui, "Интерфейс") {
+        Container(web_ui, "Веб-интерфейс")
+        Container(mobile_ui, "Мобильное приложение")
+        Container(smarttv_ui, "SmartTV")
+
+        Container(web_bff, "BFF для веба")
+        Container(mobile_bff, "BFF для мобильного приложения")
+        Container(smarttv_bff, "BFF для SmartTV")
+    }
+
+    Container(agw, "API Gateway")
+
+    ContainerQueue(kafka, "Шина данных")
+    ContainerQueue(rabbitmq, "Шина данных для рекомендательной системы")
+
+    Container(events_service, "Сервис логгирования событий системы")
+
+    System_Boundary(movies, "Стриминг фильмов") {
+        Container(movies_api, "Микросервис управления фильмами")
+        ContainerDb(movies_db, "БД фильмов")
+
+        Rel(movies_api, movies_db, "Управляет данными фильмов")
+    }
+
+    System_Boundary(users, "Управление пользователями") {
+        Container(users_api, "Микросервис управления пользователями")
+        ContainerDb(users_db, "БД пользователей")
+
+        Rel(users_api, users_db, "Управляет данными пользователей")
+    }
+
+    System_Boundary(payments, "Управление платежами пользователей") {
+        Container(payments_api, "Микросервис управления платежами")
+        ContainerDb(payments_db, "БД платежей")
+
+        Rel(payments_api, payments_db, "Управляет данными платежей")
+    }
+
+    System_Boundary(subscriptions, "Управление подписками пользователей") {
+        Container(subscriptions_api, "Микросервис управления подписками")
+        ContainerDb(subscriptions_db, "БД управления подписками")
+
+        Rel(subscriptions_api, subscriptions_db, "Управляет данными подписок")
+    }
+
+    
+    Rel(movies_api, subscriptions_api, "Узнает информацию о подписке пользователя")
+    Rel(subscriptions, payments, "Делегирует покупку подписки")
+
+    Rel(web_ui, web_bff, "Отправляет запросы")
+    Rel(mobile_ui, mobile_bff, "Отправляет запросы")
+    Rel(smarttv_ui, smarttv_bff, "Отправляет запросы")
+
+    Rel(web_bff, agw, "Взаимодействует с сервисом")
+    Rel(mobile_bff, agw, "Взаимодействует с сервисом")
+    Rel(smarttv_bff, agw, "Взаимодействует с сервисом")
+    
+    Rel(agw, movies_api, "Взаимодействует с каталогом фильмов")
+    Rel(agw, subscriptions_api, "Взаимодействует с подписками")
+    Rel(agw, users_api, "Регистрация и авторизация пользователей")
+
+    Rel(users_api, kafka, "Пишет события регистрации/авторизации", $tags="async")
+    Rel(payments_api, kafka, "Пишет события платежей", $tags="async")
+    Rel(movies_api, kafka, "Пишет события фильмов", $tags="async")
+    Rel(kafka, events_service, "Логгирует произошедшие события")
+
+
+    Rel(movies_api, rabbitmq, "Пишет просмотры фильмов пользователем и метаданные фильмов", $tags="async")
+    
+}
+
+Rel(rabbitmq, recommendation_provider, "Рассчитывает рекомендации и передает о них информацию", $tags="async")
+Rel(payments_api, payments_provider, "Делегирует оплату")
+
+Rel(subscriptions_api, email_provider, "Отправляет уведомления об обновлениях подписки")
+Rel(users_api, email_provider, "Отправляет служебные уведомления")
+Rel(movies_api, email_provider, "Отправляет уведомления о фильмах")
+
+Rel(user, web_ui, "Взаимодействует с сервисом через браузер")
+Rel(user, mobile_ui, "Взаимодействует с сервисом через мобильное устройство")
+Rel(user, smarttv_ui, "Взаимодействует с сервисом через телевизор")
+
+Rel(ui, cdn, "Стримит видео-контент")
+
+SHOW_LEGEND()
+@enduml
