@@ -13,8 +13,6 @@ import (
 )
 
 //   EVENTS_SERVICE_URL: http://events-service:8082
-//   GRADUAL_MIGRATION: "true"
-//   MOVIES_MIGRATION_PERCENT: "50"
 
 type ProxyBackend struct {
 	Url    url.URL
@@ -43,10 +41,14 @@ func weightedChoice[T weighted](choices []T, path string) (T, bool) {
 		filtered = choices
 	}
 
+	var zero T
+	if len(filtered) == 0 {
+		return zero, false
+	}
+
 	for _, c := range filtered {
 		total += c.Weight()
 	}
-	var zero T
 	if total <= 0 {
 		return zero, false
 	}
@@ -61,11 +63,11 @@ func weightedChoice[T weighted](choices []T, path string) (T, bool) {
 	return filtered[len(filtered)-1], true
 }
 
-func getProxyRewriteFunc(backends []ProxyBackend) func(*httputil.ProxyRequest) {
+func getProxyRewriteFunc(backends []ProxyBackend, defaultBackend ProxyBackend) func(*httputil.ProxyRequest) {
 	return func(pr *httputil.ProxyRequest) {
 		backend, ok := weightedChoice(backends, pr.In.URL.Path)
 		if !ok {
-			backend = backends[0]
+			backend = defaultBackend
 		}
 
 		pr.Out.URL.Scheme = backend.Url.Scheme
@@ -74,20 +76,21 @@ func getProxyRewriteFunc(backends []ProxyBackend) func(*httputil.ProxyRequest) {
 	}
 }
 
-func getBackends() []ProxyBackend {
+func getBackends() (ProxyBackend, []ProxyBackend) {
 	monolithUrl, err := url.Parse(os.Getenv("MONOLITH_URL"))
 	if err != nil || monolithUrl.Host == "" {
 		log.Fatal("Invalid $MONOLITH_URL")
 	}
+	defaultBackend := ProxyBackend{Url: *monolithUrl, weight: 100}
 
 	isGradualMigration := os.Getenv("GRADUAL_MIGRATION")
 	if isGradualMigration != "" && isGradualMigration != "true" {
-		return []ProxyBackend{{Url: *monolithUrl, weight: 100}}
+		return defaultBackend, []ProxyBackend{}
 	}
 
 	moviesServiceUrl, err := url.Parse(os.Getenv("MOVIES_SERVICE_URL"))
 	if err != nil || moviesServiceUrl.Host == "" {
-		return []ProxyBackend{{Url: *monolithUrl, weight: 100}}
+		return defaultBackend, []ProxyBackend{}
 	}
 
 	moviesTrafficPercent, err := strconv.Atoi(os.Getenv("MOVIES_MIGRATION_PERCENT"))
@@ -95,18 +98,18 @@ func getBackends() []ProxyBackend {
 		log.Fatal("Invalid $MOVIES_MIGRATION_PERCENT")
 	}
 
-	return []ProxyBackend{
-		{Url: *monolithUrl, weight: 100 - moviesTrafficPercent},
+	return defaultBackend, []ProxyBackend{
+		{Url: *monolithUrl, weight: 100 - moviesTrafficPercent, prefix: "/api/movies"},
 		{Url: *moviesServiceUrl, weight: moviesTrafficPercent, prefix: "/api/movies"},
 	}
 
 }
 
 func main() {
-	backends := getBackends()
+	defaultBackend, backends := getBackends()
 
 	proxy := &httputil.ReverseProxy{
-		Rewrite: getProxyRewriteFunc(backends),
+		Rewrite: getProxyRewriteFunc(backends, defaultBackend),
 	}
 
 	port, err := strconv.Atoi((os.Getenv("PORT")))
