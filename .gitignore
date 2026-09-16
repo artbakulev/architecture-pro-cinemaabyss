@@ -154,3 +154,6 @@ go.work
 
 # Postman tests reports
 tests/postman/reports/
+# Скомпилированные бинари сервисов
+src/microservices/*/main
+src/monolith/monolith
