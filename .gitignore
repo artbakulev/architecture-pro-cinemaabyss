@@ -1,3 +1,4 @@
+.env 
 # Go specific
 *.exe
 *.exe~
@@ -156,4 +157,6 @@ go.work
 tests/postman/reports/
 # Скомпилированные бинари сервисов
 src/microservices/*/main
+src/microservices/*/proxy
+src/microservices/*/*-service
 src/monolith/monolith
