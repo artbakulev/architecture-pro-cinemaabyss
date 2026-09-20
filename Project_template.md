@@ -279,7 +279,24 @@ cat .docker/config.json | base64
   Откройте логи event-service и сделайте скриншот обработки событий
 
 #### Шаг 3
-Добавьте сюда скриншота вывода при вызове https://cinemaabyss.example.com/api/movies и  скриншот вывода event-service после вызова тестов.
+
+Вызов `/api/movies` через ingress кластера возвращает список фильмов:
+
+![Ответ /api/movies через ingress](docs/to-be/screenshots/movies-api-response.png)
+
+Логи event-service после прогона postman-тестов — видно, что сервис и публикует события в Kafka, и сам же читает их из всех трёх топиков (movie-events, user-events, payment-events) с указанием партиции и смещения:
+
+![Логи event-service](docs/to-be/screenshots/events-service-logs.png)
+
+**Что было доработано в этом задании.**
+
+CI/CD (`.github/workflows/docker-build-push.yml`): в триггер добавлена рабочая ветка `cinema`, добавлены шаги сборки и публикации для events-service и proxy-service (по аналогии с монолитом и movies-service), в `api-tests.yml` рабочая ветка добавлена в триггеры push и pull_request. Образы публикуются в GitHub Container Registry, сборка и тесты зелёные.
+
+Образы собираются мультиархитектурными (`linux/amd64` и `linux/arm64`). Это потребовалось потому, что раннер GitHub работает на amd64, а локальный кластер minikube на Apple Silicon — на arm64, и одноплатформенный образ там не запускается с ошибкой `no match for platform in manifest`. В Dockerfile стадия сборки закреплена за архитектурой раннера через `--platform=$BUILDPLATFORM`, а бинарь кросс-компилируется под целевую архитектуру через `GOARCH=$TARGETARCH` — так тяжёлая часть сборки идёт нативно, без эмуляции.
+
+Kubernetes: написаны манифесты `events-service.yaml` и `proxy-service.yaml` (Deployment и Service, проверки готовности и живости на health-эндпоинтах, `imagePullSecrets` для приватного реестра), в `ingress.yaml` добавлено правило для корневого пути на прокси-сервис, в `configmap.yaml` добавлены `EVENTS_SERVICE_URL` и `KAFKA_BROKERS`, в манифестах заменены пути к образам на собственный реестр. В манифест Kafka добавлен `KAFKA_HEAP_OPTS`, ограничивающий heap JVM половиной гигабайта: по умолчанию образ запрашивает под heap ровно столько же, сколько составляет лимит памяти контейнера, и под падал с `OOMKilled`.
+
+Проверка: postman-тесты против кластера (`npm run test:kubernetes`) проходят полностью — 22 запроса, 42 проверки, ноль падений.
 
 
 ## Задание 4
