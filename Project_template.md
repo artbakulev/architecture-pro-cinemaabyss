@@ -439,6 +439,22 @@ You can see 21 for the upstream_rq_pending_overflow value which means 21 calls s
 
 Приложите скриншот работы circuit breaker'а
 
+**Решение.** Istio развёрнут в кластере, для namespace `cinemaabyss` включено автоматическое внедрение sidecar-прокси — все поды работают в mesh. Circuit Breaker описан двумя ресурсами `DestinationRule`: [movies-circuit-breaker.yaml](src/kubernetes/movies-circuit-breaker.yaml) и [monolith-circuit-breaker.yaml](src/kubernetes/monolith-circuit-breaker.yaml).
+
+Политика состоит из двух частей. Ограничения пула соединений (`connectionPool`) не дают накапливать очередь запросов к сервису: при превышении лимита Envoy сразу отвечает кодом 503 вместо того, чтобы добивать перегруженный сервис новыми запросами. Выброс неисправных экземпляров (`outlierDetection`) считает подряд идущие ошибки от каждого эндпоинта и временно исключает его из балансировки, давая шанс вернуться через заданное время.
+
+Проверка нагрузкой через Fortio — четыре параллельных соединения на двадцать запросов при лимите в одно соединение.
+
+Movies-сервис: 60% запросов прошли успешно, 40% отбиты предохранителем с кодом 503.
+
+![Circuit Breaker для movies-service](docs/to-be/screenshots/fortio-movies-circuit-breaker.webp)
+
+Монолит: соотношение 50 на 50.
+
+![Circuit Breaker для монолита](docs/to-be/screenshots/fortio-monolith-circuit-breaker.webp)
+
+Ответы с кодом 503 приходят мгновенно (медиана времени ответа у отбитых запросов заметно ниже, чем у успешных) — это и есть признак разомкнутой цепи: запрос не доходит до сервиса, а отбивается sidecar-прокси на стороне вызывающего.
+
 Удаляем все
 ```bash
 istioctl uninstall --purge
