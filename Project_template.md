@@ -373,6 +373,14 @@ minikube tunnel
 https://cinemaabyss.example.com/api/movies
 и приложите скриншот развертывания helm и вывода https://cinemaabyss.example.com/api/movies
 
+**Решение.** Чарт лежит в [src/kubernetes/helm](src/kubernetes/helm). Заполнены шаблоны [proxy-service.yaml](src/kubernetes/helm/templates/services/proxy-service.yaml) и [events-service.yaml](src/kubernetes/helm/templates/services/events-service.yaml): Deployment и Service, где образ, число реплик, лимиты ресурсов и порты берутся из `values.yaml`, а проверки готовности и живости настроены на health-эндпоинты сервисов. В `values.yaml` подставлены собственный реестр образов и секрет для доступа к нему.
+
+Каждый сервис обёрнут условием `enabled`, поэтому любой из них можно отключить без правки шаблонов — это удобно при отладке, когда нужно поднять только часть стека. Общие для всех сервисов настройки (адреса соседей, параметры подключения к базе, доля трафика для Strangler Fig) вынесены в ConfigMap и Secret, которые тоже генерируются из значений чарта: так одно изменение в `values.yaml` применяется сразу ко всем потребителям.
+
+Установка проверена с нуля: namespace удалён, весь стек поднят через `helm install`.
+
+При проверке обнаружилось и исправлено расхождение в шаблоне ConfigMap: адрес сервиса фильмов был записан как `http://movies`, тогда как сервис называется `movies-service`, из-за чего прокси отвечал ошибкой 502 при обращении к `/api/movies`. Туда же добавлены отсутствовавшие `EVENTS_SERVICE_URL` и `KAFKA_BROKERS`.
+
 
 # Задание 5
 Компания планирует активно развиваться и для повышения надежности, безопасности, реализации сетевых паттернов типа Circuit Breaker и канареечного деплоя вам как архитектору необходимо развернуть istio и настроить circuit breaker для monolith и movies сервисов.
