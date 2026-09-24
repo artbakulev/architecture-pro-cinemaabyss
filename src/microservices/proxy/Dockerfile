@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 ARG TARGETARCH
 
@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -a -installsuffix cgo -o monolith .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -a -installsuffix cgo -o proxy .
 
 # Use a smaller image for the final application
 FROM alpine:latest  
@@ -24,10 +24,10 @@ RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 
 # Copy the binary from builder
-COPY --from=builder /app/monolith .
+COPY --from=builder /app/proxy .
 
 # Expose the application port
-EXPOSE 8080
+EXPOSE 9000
 
 # Command to run the executable
-CMD ["./monolith"]
+CMD ["./proxy"]
